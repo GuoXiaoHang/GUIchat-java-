@@ -13,6 +13,11 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -30,6 +35,8 @@ public class GUIchat extends Frame {
 	private Button btn_clear;
 	private Button btn_shake;
 	private DatagramSocket sendSocket;
+	private BufferedWriter bw;
+	private final String logFileName = "record.txt";
 
 	public GUIchat() {
 		this.setLocation(400, 40);
@@ -39,7 +46,8 @@ public class GUIchat extends Frame {
 		addListener();
 		try {
 			sendSocket = new DatagramSocket();
-		} catch (SocketException e) {
+			bw = new BufferedWriter(new FileWriter(logFileName, true));
+		} catch (Exception e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
@@ -52,6 +60,12 @@ public class GUIchat extends Frame {
 			@Override
 			public void windowClosing(WindowEvent e) {
 				sendSocket.close();
+				try {
+					bw.close();
+				} catch (IOException e1) {
+					// TODO Auto-generated catch block
+					e1.printStackTrace();
+				}
 				System.exit(0);
 			}
 		});
@@ -70,17 +84,91 @@ public class GUIchat extends Frame {
 			}
 		});
 		
+		btn_record.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseReleased(MouseEvent e) {
+				showRecord();
+			}
+		});
+		
+		btn_clear.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseReleased(MouseEvent e) {
+				viewArea.setText("");
+			}
+		});
+		
+		btn_shake.addMouseListener(new MouseAdapter() {
+			@Override
+			public void mouseReleased(MouseEvent e) {
+				send("__shake__", tf.getText());
+			}
+		});
+		
 		btn_send.addMouseListener(new MouseAdapter() {
 			@Override
 			public void mouseReleased(MouseEvent e) {
 				try {
 					send();
 				} catch (Exception e1) {
-					// TODO Auto-generated catch block
 					e1.printStackTrace();
 				}
 			}
 		});
+	}
+
+	protected void shake() {
+		int x = this.getLocation().x;
+		int y = this.getLocation().y;
+		final int timeout = 50;
+		for (int i = 0; i < 3; i++) {
+			try {
+				this.setLocation(x + i*5, y);
+				Thread.sleep(timeout);
+				this.setLocation(x + i*5, y + i*5);
+				Thread.sleep(timeout);
+				this.setLocation(x, y + i*5);
+				Thread.sleep(timeout);
+				this.setLocation(x, y);
+				Thread.sleep(timeout);
+				this.setLocation(x - i*5, y);
+				Thread.sleep(timeout);
+				this.setLocation(x - i*5, y - i*5);
+				Thread.sleep(timeout);
+				this.setLocation(x, y - i*5);
+				Thread.sleep(timeout);
+				this.setLocation(x, y);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+	}
+
+	protected void showRecord() {
+		FileInputStream fis = null;
+		ByteArrayOutputStream baos = null;
+		
+		int len;
+		byte[] arr = new byte[8192];
+		try {
+			bw.flush();
+			fis = new FileInputStream(logFileName);
+			baos = new ByteArrayOutputStream();
+			while ((len = fis.read(arr)) != -1) {
+				baos.write(arr, 0, len);
+			}
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		String log = baos.toString();
+		viewArea.setText(log);
+		try {
+			fis.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
 	}
 
 	private void addCenterPanel() {
@@ -111,9 +199,7 @@ public class GUIchat extends Frame {
 		this.add(southPanel, BorderLayout.SOUTH);
 	}
 	
-	private void send() throws Exception {
-		String info = sendArea.getText();
-		String ip = tf.getText();
+	private void send(String info, String ip) { 
 		try {
 			DatagramPacket packet = new DatagramPacket(info.getBytes(), info.getBytes().length, InetAddress.getByName(ip), 9999);
 			sendSocket.send(packet);
@@ -121,8 +207,16 @@ public class GUIchat extends Frame {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+	}
+	
+	private void send() throws Exception {
+		String info = sendArea.getText();
+		String ip = tf.getText();
+		send(info, ip);
 		String time = getCurrentTime();
-		viewArea.append(time + " " + InetAddress.getLocalHost().getHostAddress() + "\n" + info + "\n");
+		String str = time + " " + InetAddress.getLocalHost().getHostAddress() + "\n" + info + "\n";
+		bw.write(str);
+		viewArea.append(str);
 		sendArea.setText("");
 	}
 
@@ -142,8 +236,14 @@ public class GUIchat extends Frame {
 					byte[] buf = packet.getData();
 					int len = packet.getLength();
 					String info = new String(buf, 0, len);
+					if ("__shake__".equals(info)) {
+						shake();
+						continue;
+					}
 					String time = getCurrentTime();
-					viewArea.append(time + " " + packet.getAddress().getHostAddress() + "\n" + info + "\n");
+					String str = time + " " + packet.getAddress().getHostAddress() + "\n" + info + "\n";
+					bw.write(str);
+					viewArea.append(str);
 				}
 			} catch (Exception e) {
 				// TODO Auto-generated catch block
